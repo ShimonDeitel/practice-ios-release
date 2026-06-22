@@ -1,242 +1,259 @@
 import SwiftUI
-import Charts
 
 struct InsightsView: View {
     @EnvironmentObject var appModel: AppModel
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedSegment = 0
-    private let segments = ["History", "Dual Wave", "Insights"]
+    @State private var selectedTab = 0
 
     var body: some View {
         NavigationStack {
             ZStack {
                 QMBackground()
-
-                if !store.isPro {
-                    VStack(spacing: 16) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 48))
-                            .foregroundStyle(Color.qmAccent)
-                        Text("Tideline Pro Required")
-                            .font(.title2.weight(.bold))
-                        Text("Unlock multi-month history, dual-wave comparison and insights.")
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 32)
-                        Button("Dismiss") { dismiss() }
-                            .softButton()
+                VStack(spacing: 0) {
+                    Picker("Section", selection: $selectedTab) {
+                        Text("Journal").tag(0)
+                        Text("Library").tag(1)
+                        Text("Streak").tag(2)
                     }
-                } else {
-                    ScrollView {
-                        VStack(spacing: 24) {
-                            Picker("View", selection: $selectedSegment) {
-                                ForEach(0..<segments.count, id: \.self) { i in
-                                    Text(segments[i]).tag(i)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .padding(.horizontal, 16)
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
 
-                            switch selectedSegment {
-                            case 0: historySection
-                            case 1: dualWaveSection
-                            default: insightsSection
-                            }
+                    Divider()
 
-                            Spacer(minLength: 32)
-                        }
-                        .padding(.top, 8)
+                    switch selectedTab {
+                    case 0:
+                        journalList
+                    case 1:
+                        libraryList
+                    default:
+                        streakView
                     }
                 }
             }
             .navigationTitle("Insights")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
+                        .foregroundStyle(Color.qmAccent)
                 }
             }
         }
     }
 
-    // MARK: - History
-    private var historySection: some View {
-        VStack(spacing: 16) {
-            // Full history chart
-            if appModel.allEntries.isEmpty {
-                Text("No data yet. Start logging your energy each day.")
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(32)
-            } else {
-                let sorted = appModel.allEntries.sorted { $0.date < $1.date }
-                Chart {
-                    ForEach(Array(sorted.enumerated()), id: \.offset) { idx, entry in
-                        LineMark(
-                            x: .value("Day", idx),
-                            y: .value("Level", entry.level)
-                        )
-                        .foregroundStyle(Color.qmAccent)
-                        .lineStyle(StrokeStyle(lineWidth: 2))
-                        .interpolationMethod(.catmullRom)
+    // MARK: - Journal (reflections)
 
-                        AreaMark(
-                            x: .value("Day", idx),
-                            yStart: .value("Base", 0),
-                            yEnd: .value("Level", entry.level)
-                        )
-                        .foregroundStyle(Color.qmAccent.opacity(0.15))
-                        .interpolationMethod(.catmullRom)
+    private var journalList: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                let reflected = appModel.allLessons.filter { !$0.reflection.isEmpty }
+                if reflected.isEmpty {
+                    emptyState(
+                        icon: "text.bubble",
+                        title: "No reflections yet",
+                        subtitle: "Write a reflection when you complete today's practice to see it here."
+                    )
+                } else {
+                    ForEach(reflected, id: \.id) { lesson in
+                        journalCard(lesson: lesson)
                     }
                 }
-                .chartYScale(domain: 0...10)
-                .chartXAxis(.hidden)
-                .frame(height: 180)
-                .padding(.horizontal, 16)
-
-                // Entry list
-                LazyVStack(spacing: 1) {
-                    ForEach(sorted.reversed()) { entry in
-                        HStack {
-                            Text(entry.date, style: .date)
-                                .font(.subheadline)
-                            Spacer()
-                            Text(entry.partOfDay.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("\(entry.level)")
-                                .font(.headline.monospacedDigit())
-                                .foregroundStyle(Color.qmAccent)
-                                .frame(width: 28, alignment: .trailing)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.qmCard)
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .padding(.horizontal, 16)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 40)
         }
     }
 
-    // MARK: - Dual Wave
-    private var dualWaveSection: some View {
-        VStack(spacing: 16) {
-            Text("Morning vs Evening")
-                .font(.headline)
-
-            let mornings = appModel.allEntries.filter { $0.partOfDay == "morning" }.sorted { $0.date < $1.date }
-            let evenings = appModel.allEntries.filter { $0.partOfDay == "evening" }.sorted { $0.date < $1.date }
-
-            if mornings.isEmpty && evenings.isEmpty {
-                Text("Use the morning/evening toggle when logging to see your dual-wave comparison.")
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(32)
-            } else {
-                Chart {
-                    ForEach(Array(mornings.enumerated()), id: \.offset) { idx, entry in
-                        LineMark(
-                            x: .value("Day", idx),
-                            y: .value("Morning", entry.level),
-                            series: .value("Time", "Morning")
-                        )
-                        .foregroundStyle(Color.qmAccent)
-                        .interpolationMethod(.catmullRom)
-                    }
-                    ForEach(Array(evenings.enumerated()), id: \.offset) { idx, entry in
-                        LineMark(
-                            x: .value("Day", idx),
-                            y: .value("Evening", entry.level),
-                            series: .value("Time", "Evening")
-                        )
+    private func journalCard(lesson: Lesson) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(lesson.dateUnlocked, style: .date)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.qmAccent)
+                Spacer()
+                if lesson.didPractice {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption)
                         .foregroundStyle(Color.qmCorrect)
-                        .interpolationMethod(.catmullRom)
-                    }
-                }
-                .chartYScale(domain: 0...10)
-                .chartXAxis(.hidden)
-                .chartLegend(.visible)
-                .frame(height: 180)
-                .padding(.horizontal, 16)
-
-                HStack(spacing: 16) {
-                    HStack(spacing: 6) {
-                        Circle().fill(Color.qmAccent).frame(width: 10, height: 10)
-                        Text("Morning").font(.caption).foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 6) {
-                        Circle().fill(Color.qmCorrect).frame(width: 10, height: 10)
-                        Text("Evening").font(.caption).foregroundStyle(.secondary)
-                    }
                 }
             }
-        }
-        .padding(.horizontal, 16)
-    }
-
-    // MARK: - Insights
-    private var insightsSection: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 12) {
-                MetricTile(
-                    value: String(format: "%.1f", appModel.sevenDayAverage),
-                    label: "7-day avg"
-                )
-                MetricTile(
-                    value: "\(appModel.currentStreak)",
-                    label: "Day streak"
-                )
-                MetricTile(
-                    value: appModel.bestTimeOfDay,
-                    label: "Best time"
-                )
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Energy Insights")
-                    .font(.headline)
-
-                insightRow(
-                    icon: "sun.max",
-                    title: "Best time of day",
-                    value: appModel.bestTimeOfDay
-                )
-                insightRow(
-                    icon: "flame",
-                    title: "Current streak",
-                    value: "\(appModel.currentStreak) days"
-                )
-                insightRow(
-                    icon: "chart.line.uptrend.xyaxis",
-                    title: "Total entries",
-                    value: "\(appModel.allEntries.count)"
-                )
-                insightRow(
-                    icon: "waveform.path.ecg",
-                    title: "Average energy",
-                    value: String(format: "%.1f / 10", appModel.sevenDayAverage)
-                )
-            }
-            .qmCard()
-        }
-        .padding(.horizontal, 16)
-    }
-
-    private func insightRow(icon: String, title: String, value: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(Color.qmAccent)
-                .frame(width: 24)
-            Text(title)
-                .font(.subheadline)
-            Spacer()
-            Text(value)
+            Text(lesson.principle)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            if !lesson.reflection.isEmpty {
+                Text(lesson.reflection)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .qmCard()
+    }
+
+    // MARK: - Library (all lessons)
+
+    private var libraryList: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(appModel.allLessons, id: \.id) { lesson in
+                    libraryCard(lesson: lesson)
+                }
+                if appModel.allLessons.isEmpty {
+                    emptyState(
+                        icon: "books.vertical",
+                        title: "No past principles",
+                        subtitle: "Principles you've unlocked will appear here."
+                    )
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 40)
+        }
+    }
+
+    private func libraryCard(lesson: Lesson) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack {
+                Image(systemName: lesson.didPractice ? "checkmark.circle.fill" : "circle")
+                    .font(.body)
+                    .foregroundStyle(lesson.didPractice ? Color.qmCorrect : Color(uiColor: .tertiaryLabel))
+            }
+            .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(lesson.principle)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("— \(lesson.source)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .italic()
+                Text(lesson.dateUnlocked, style: .date)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(14)
+        .background(Color.qmCard, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    // MARK: - Streak
+
+    private var streakView: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                // Main streak
+                VStack(spacing: 8) {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 52))
+                        .foregroundStyle(Color.qmAccent)
+                    Text("\(appModel.streak)")
+                        .font(.system(size: 72, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                    Text(appModel.streak == 1 ? "Day Streak" : "Day Streak")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(28)
+                .background(Color.qmCard, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+
+                // Summary stats
+                HStack(spacing: 12) {
+                    MetricTile(
+                        value: "\(appModel.allLessons.filter(\.didPractice).count)",
+                        label: "Total Completed"
+                    )
+                    MetricTile(
+                        value: "\(appModel.allLessons.count)",
+                        label: "Days Unlocked"
+                    )
+                    MetricTile(
+                        value: completionRate,
+                        label: "Completion Rate"
+                    )
+                }
+
+                // Recent 7-day grid
+                recent7DayGrid
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 40)
+        }
+    }
+
+    private var completionRate: String {
+        let total = appModel.allLessons.count
+        guard total > 0 else { return "0%" }
+        let done = appModel.allLessons.filter(\.didPractice).count
+        let pct = Int((Double(done) / Double(total)) * 100)
+        return "\(pct)%"
+    }
+
+    private var recent7DayGrid: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Last 7 Days")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                ForEach(0..<7) { offset in
+                    let date = Calendar.current.date(byAdding: .day, value: -(6 - offset), to: Date())!
+                    let dayStart = Calendar.current.startOfDay(for: date)
+                    let lesson = appModel.allLessons.first(where: {
+                        Calendar.current.isDate($0.dateUnlocked, inSameDayAs: dayStart)
+                    })
+                    let done = lesson?.didPractice ?? false
+                    let hasLesson = lesson != nil
+
+                    VStack(spacing: 6) {
+                        Text(dayLetter(date))
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                        Circle()
+                            .fill(done ? Color.qmAccent : (hasLesson ? Color.qmHair : Color.clear))
+                            .frame(width: 26, height: 26)
+                            .overlay(
+                                Circle().strokeBorder(done ? Color.clear : Color.qmHair, lineWidth: 1.5)
+                            )
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.qmCard, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func dayLetter(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "E"
+        return String(f.string(from: date).prefix(1))
+    }
+
+    // MARK: - Empty state
+
+    private func emptyState(icon: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 40))
+                .foregroundStyle(Color.qmAccent.opacity(0.6))
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(40)
     }
 }

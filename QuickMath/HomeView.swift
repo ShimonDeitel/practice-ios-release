@@ -7,80 +7,31 @@ struct HomeView: View {
     @EnvironmentObject var store: Store
 
     @State private var showSettings = false
-    @State private var showPaywall = false
     @State private var showInsights = false
+    @State private var showPaywall = false
 
     var body: some View {
         NavigationStack {
             ZStack {
                 QMBackground()
-
                 ScrollView {
                     VStack(spacing: 24) {
-                        // Header
-                        VStack(spacing: 4) {
-                            Text("Tideline")
-                                .font(.largeTitle.weight(.bold))
-                            Text("Ride your daily mood wave")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 8)
-
-                        // Today's entry card
+                        headerSection
+                        metricsRow
                         GridView()
-                            .padding(.horizontal, 16)
-
-                        // Stats row
-                        HStack(spacing: 12) {
-                            MetricTile(
-                                value: appModel.todayEntry.map { "\($0.level)" } ?? "-",
-                                label: "Today"
-                            )
-                            MetricTile(
-                                value: String(format: "%.1f", appModel.sevenDayAverage),
-                                label: "7-day avg"
-                            )
-                            MetricTile(
-                                value: "\(appModel.currentStreak)",
-                                label: "Streak"
-                            )
-                        }
-                        .padding(.horizontal, 16)
-
-                        // Pro tile
-                        Button {
-                            if store.isPro {
-                                showInsights = true
-                            } else {
-                                showPaywall = true
-                            }
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(store.isPro ? "Tideline Pro" : "Unlock Insights")
-                                        .font(.headline)
-                                    Text(store.isPro ? "History, dual-wave & trends" : "Multi-month history + dual-wave")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: store.isPro ? "waveform.path.ecg" : "lock.fill")
-                                    .foregroundStyle(Color.qmAccent)
-                                    .font(.title3)
-                            }
-                            .qmCard()
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
-
-                        Spacer(minLength: 32)
+                            .environmentObject(appModel)
+                            .environmentObject(store)
+                        proSection
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    .padding(.bottom, 40)
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Practice")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showSettings = true
                     } label: {
@@ -91,11 +42,7 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
-                    .environmentObject(store)
                     .environmentObject(appModel)
-            }
-            .sheet(isPresented: $showPaywall) {
-                PaywallView()
                     .environmentObject(store)
             }
             .sheet(isPresented: $showInsights) {
@@ -103,19 +50,89 @@ struct HomeView: View {
                     .environmentObject(appModel)
                     .environmentObject(store)
             }
+            .sheet(isPresented: $showPaywall) {
+                PaywallView()
+                    .environmentObject(store)
+            }
             .onAppear {
-                handleForceScreen()
+                if forceScreen == "insights" { showInsights = true }
+                if forceScreen == "paywall" { showPaywall = true }
+                if forceScreen == "settings" { showSettings = true }
             }
         }
     }
 
-    private func handleForceScreen() {
-        guard let screen = forceScreen else { return }
-        switch screen {
-        case "paywall": showPaywall = true
-        case "insights": showInsights = true
-        case "settings": showSettings = true
-        default: break
+    // MARK: - Header
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(todayDateString)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text("Today's Principle")
+                .font(.title2.weight(.bold))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var todayDateString: String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE, MMMM d"
+        return f.string(from: Date())
+    }
+
+    // MARK: - Metrics row
+
+    private var metricsRow: some View {
+        HStack(spacing: 12) {
+            MetricTile(
+                value: "\(appModel.streak)",
+                label: appModel.streak == 1 ? "Day Streak" : "Day Streak"
+            )
+            MetricTile(
+                value: "\(appModel.allLessons.filter(\.didPractice).count)",
+                label: "Completed"
+            )
+            MetricTile(
+                value: "\(appModel.allLessons.count)",
+                label: "Unlocked"
+            )
+        }
+    }
+
+    // MARK: - Pro section
+
+    private var proSection: some View {
+        Button {
+            if store.isPro {
+                showInsights = true
+            } else {
+                showPaywall = true
+            }
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: store.isPro ? "chart.bar.fill" : "lock.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.qmAccent)
+                    .frame(width: 36, height: 36)
+                    .background(Color.qmAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(store.isPro ? "Your Insights" : "Practice Pro")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(store.isPro ? "Streaks, journal & full library" : "Unlock streaks, journal & library")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(16)
+            .background(Color.qmCard, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }
